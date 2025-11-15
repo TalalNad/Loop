@@ -23,7 +23,7 @@ export const sendMessageController = async (request, response) => {
 
         await client.query("COMMIT");
 
-        return response.status(201).json({ message: "Message sent successfully." });
+        return response.status(200).json({ message: "Message sent successfully." });
     } catch (error) {
         console.error('Error sending message:', error);
         await client.query("ROLLBACK");
@@ -32,6 +32,28 @@ export const sendMessageController = async (request, response) => {
         client.release();
     }
 };
+
+export const addGroupMemberController = async (request, response) => {
+    const { body: { groupid, memberid } } = request;
+
+    const client = await pool.connect();
+
+    try {
+        await client.query("BEGIN");
+
+        await client.query('Insert into GroupMembers (groupid, userid) values ($1, $2)', [groupid, memberid]);
+
+        await client.query("COMMIT");
+
+        return response.status(200).json({ message: "Member added to group successfully." });
+    } catch (error) {
+        console.error('Error adding group member:', error);
+        await client.query("ROLLBACK");
+        return response.status(500).json({ error: 'Internal Server Error' });
+    } finally {
+        client.release();
+    }
+}
 
 export const createGroupController = async (request, response) => {
     const { body: { groupname, userid } } = request;
@@ -45,7 +67,7 @@ export const createGroupController = async (request, response) => {
 
         await client.query("COMMIT");
 
-        return response.status(201).json({ message: "Group created successfully." });
+        return response.status(200).json({ message: "Group created successfully." });
     } catch (error) {
         console.error('Error creating group:', error);
         await client.query("ROLLBACK");
@@ -70,7 +92,7 @@ export const sendGroupMessageController = async (request, response) => {
 
         await client.query("COMMIT");
 
-        return response.status(201).json({ message: "Group message sent successfully." });
+        return response.status(200).json({ message: "Group message sent successfully." });
     } catch (error) {
         console.error('Error sending group message:', error);
         await client.query("ROLLBACK");
