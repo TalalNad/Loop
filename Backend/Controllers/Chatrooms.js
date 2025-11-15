@@ -4,6 +4,36 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const ENC_KEY = Buffer.from(process.env.ENCRYPTION_KEY, 'hex');
+const IV_LENGTH = 12;
+
+export function encryptMessage(text) {
+    const iv = crypto.randomBytes(IV_LENGTH);
+    const cipher = crypto.createCipheriv("aes-256-gcm", ENC_KEY, iv);
+
+    let encrypted = cipher.update(text, "utf8", "hex");
+    encrypted += cipher.final("hex");
+
+    const authTag = cipher.getAuthTag();
+
+    return {
+        iv: iv.toString("hex"),
+        content: encrypted,
+        tag: authTag.toString("hex")
+    };
+}
+
+export function decryptMessage({ iv, content, tag }) {
+    const decipher = crypto.createDecipheriv("aes-256-gcm", ENC_KEY, Buffer.from(iv, "hex"));
+
+    decipher.setAuthTag(Buffer.from(tag, "hex"));
+
+    let decrypted = decipher.update(content, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+
+    return decrypted;
+};
+
 export const chatroomController = async (request, response) => {
     return response.json("Hello, World! Chatrooms endpoint is working fine.");
 };
@@ -14,8 +44,10 @@ export const sendMessageController = async (request, response) => {
     const client = await pool.connect();
 
     try {
-        const query = 'Insert into UserMessages (senderid, receiverid, content) values ($1, $2, $3)';
-        const values = [senderid, receiverid, message];
+        const encryptedMessage = encryptMessage(message);
+
+        const query = 'Insert into UserMessages (senderid, receiverid, content, iv, tag) values ($1, $2, $3, $4, $5)';
+        const values = [senderid, receiverid, encryptedMessage.content, encryptedMessage.iv, encryptedMessage.tag];
 
         await client.query("BEGIN");
 
