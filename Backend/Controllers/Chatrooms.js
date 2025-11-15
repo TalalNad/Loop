@@ -65,6 +65,30 @@ export const sendMessageController = async (request, response) => {
     }
 };
 
+export const fetchMessageController = async (request, response) => {
+    const { body: { userid } } = request;
+
+    try {
+        const result = await pool.query('Select * from UserMessages where receiverid = $1', [userid]);
+
+        const messages = result.rows.map(row => {
+            const decryptedContent = decryptMessage({ iv: row.iv, content: row.content, tag: row.tag });
+
+            return {
+                id: row.id,
+                senderid: row.senderid,
+                receiverid: row.receiverid,
+                content: decryptedContent
+            }
+        });
+
+        return response.status(200).json({ messages });
+    } catch (error) {
+        console.error('Error fetching messages:', error);
+        return response.status(500).json({ error: 'Internal Server Error' });
+    }
+};
+
 export const addGroupMemberController = async (request, response) => {
     const { body: { groupid, memberid } } = request;
 
