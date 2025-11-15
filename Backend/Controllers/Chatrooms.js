@@ -31,4 +31,29 @@ export const sendMessageController = async (request, response) => {
     } finally {
         client.release();
     }
-}
+};
+
+export const sendGroupMessageController = async (request, response) => {
+    const { body: { senderid, groupid, message } } = request;
+
+    const client = await pool.connect();
+
+    try {
+        const query = 'Insert into GroupMessages (senderid, groupid, content) values ($1, $2, $3)';
+        const values = [senderid, groupid, message];
+
+        await client.query("BEGIN");
+
+        await client.query(query, values);
+
+        await client.query("COMMIT");
+
+        return response.status(201).json({ message: "Group message sent successfully." });
+    } catch (error) {
+        console.error('Error sending group message:', error);
+        await client.query("ROLLBACK");
+        return response.status(500).json({ error: 'Internal Server Error' });
+    } finally {
+        client.release();
+    }
+};
