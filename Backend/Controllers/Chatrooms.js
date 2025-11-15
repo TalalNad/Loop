@@ -41,7 +41,7 @@ export const createGroupController = async (request, response) => {
     try {
         await client.query("BEGIN");
 
-        await client.query('Insert into Groups (groupname, created_by) values ($1, $2)', [groupname, userid]);
+        await client.query('Insert into Groups (groupname, created_by, created_at) values ($1, $2, current_timestamp)', [groupname, userid]);
 
         await client.query("COMMIT");
 
