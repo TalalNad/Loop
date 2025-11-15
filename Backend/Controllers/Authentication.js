@@ -10,6 +10,19 @@ export const signupController = async (request, response) => {
     const client = await pool.connect();
 
     try {
+        const usernameCheckQuery = 'Select * from Users where username = $1';
+        const emailCheckQuery = 'Select * from Users where email = $1';
+
+        const usernameCheckResult = await client.query(usernameCheckQuery, [username]);
+
+        if (usernameCheckResult.rowCount)
+            return response.status(400).json({ message: "Username already taken. Try another one." });
+
+        const emailCheckResult = await client.query(emailCheckQuery, [email]);
+
+        if (emailCheckResult.rowCount)
+            return response.status(400).json({ message: "Email already registered. Try logging in." });
+
         await client.query('BEGIN');
 
         const query = 'Insert into users (username, password, email) values ($1, $2, $3) returning *';
