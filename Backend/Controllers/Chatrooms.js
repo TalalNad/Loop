@@ -36,8 +36,24 @@ export const sendMessageController = async (request, response) => {
 export const createGroupController = async (request, response) => {
     const { body: { groupname, userid } } = request;
 
-    
-}
+    const client = await pool.connect();
+
+    try {
+        await client.query("BEGIN");
+
+        await client.query('Insert into Groups (groupname, created_by) values ($1, $2)', [groupname, userid]);
+
+        await client.query("COMMIT");
+
+        return response.status(201).json({ message: "Group created successfully." });
+    } catch (error) {
+        console.error('Error creating group:', error);
+        await client.query("ROLLBACK");
+        return response.status(500).json({ error: 'Internal Server Error' });
+    } finally {
+        client.release();
+    }
+};
 
 export const sendGroupMessageController = async (request, response) => {
     const { body: { senderid, groupid, message } } = request;
