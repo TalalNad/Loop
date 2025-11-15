@@ -33,6 +33,12 @@ export const sendMessageController = async (request, response) => {
     }
 };
 
+export const createGroupController = async (request, response) => {
+    const { body: { groupname, userid } } = request;
+
+    
+}
+
 export const sendGroupMessageController = async (request, response) => {
     const { body: { senderid, groupid, message } } = request;
 
