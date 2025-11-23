@@ -17,12 +17,14 @@ export default function SignupPage() {
     setSubmitting(true);
 
     try {
-      const data = await signup({ username, email, password });
+      // Call backend to create the user
+      await signup({ username, email, password });
 
-      localStorage.setItem('loop_token', data.token);
-      localStorage.setItem('loop_user', JSON.stringify(data.user));
+      // ❌ DO NOT auto-login
+      // ❌ DO NOT store token/user here
 
-      navigate('/chats');
+      // ✅ Just send them to the login page
+      navigate('/login');
     } catch (err) {
       setError(err.message || 'Signup failed');
     } finally {
