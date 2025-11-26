@@ -416,3 +416,30 @@ export const sendGroupMessageController = async (request, response) => {
         client.release();
     }
 }
+
+export const fetchGroupMessageController = async (request, response) => {
+    const { params: { groupid } } = request;
+
+    try {
+        const result = await pool.query('Select * from FetchGroupMessages where groupid = $1', [groupid]);
+
+        const messages = result.rows.map((row, index) => {
+            const decryptedMessage = decryptMessage({
+                iv: row.iv,
+                content: row.content,
+                tag: row.tag,
+            });
+
+            return {
+                username: row.username,
+                senderid: row.senderid,
+                content: decryptedMessage.content
+            }
+        })
+
+        return response.status(200).json({ messages });
+    } catch (error) {
+        console.error('Error fetching group messages:', error);
+        return response.status(500).json({ error: 'Internal Server Error' });
+    }
+}
