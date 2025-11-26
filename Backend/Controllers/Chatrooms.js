@@ -389,31 +389,30 @@ export const createGroupController = async (request, response) => {
 };
 
 export const sendGroupMessageController = async (request, response) => {
-    const {
-        body: { senderid, groupid, message },
-    } = request;
+    const { body: { senderid, groupid, message } } = request;
 
     const client = await pool.connect();
 
     try {
-        const query =
-            'Insert into GroupMessages (senderid, groupid, content) values ($1, $2, $3)';
-        const values = [senderid, groupid, message];
+        const encryptedMessage = encryptMessage(message);
 
-        await client.query('BEGIN');
+        const query = `Insert into GroupMessages (senderid, groupid, sent_at, content, iv, tag) 
+        values ($1, $2, current_timestamp, $3, $4, $5)`;
+
+        const values = [senderid, groupid, encryptedMessage.content, encryptedMessage.iv, encryptedMessage.tag];
+
+        await client.query("BEGIN");
 
         await client.query(query, values);
 
-        await client.query('COMMIT');
+        await client.query("COMMIT");
 
-        return response
-            .status(200)
-            .json({ message: 'Group message sent successfully.' });
+        return response.status(200).json({ message: 'Group message sent successfully.' });
     } catch (error) {
         console.error('Error sending group message:', error);
-        await client.query('ROLLBACK');
+        await client.query("ROLLBACK");
         return response.status(500).json({ error: 'Internal Server Error' });
     } finally {
         client.release();
     }
-};
+}
