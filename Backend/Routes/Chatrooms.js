@@ -11,6 +11,7 @@ import {
   fetchConversationController,
   sendConversationMessageController,
   startChatController,
+  fetchGroupMessageController
 } from '../Controllers/Chatrooms.js';
 import { verifyToken } from '../Middlewares/Authentication.js';
 
@@ -30,6 +31,7 @@ router.post('/send-group-message', sendGroupMessageController);
 router.post('/create-group', createGroupController);
 router.post('/add-group-member', addGroupMemberController);
 router.get('/messages', fetchMessageController);
+router.get('/chatroom/group/:groupid', fetchGroupMessageController);
 
 /**
  * Start or get a chat with another user by username.
