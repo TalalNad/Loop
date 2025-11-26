@@ -14,6 +14,7 @@ import {
   fetchGroupMessageController
 } from '../Controllers/Chatrooms.js';
 import { verifyToken } from '../Middlewares/Authentication.js';
+import { verifyGroupMember } from '../Middlewares/Chatrooms.js';
 
 const router = Router();
 
@@ -27,11 +28,11 @@ router.get('/', verifyToken, fetchChatRoomsController);
  * Legacy endpoints you already had – kept as-is so nothing breaks.
  */
 router.post('/send', sendMessageController);
-router.post('/send-group-message', sendGroupMessageController);
+router.post('/send-group-message', verifyGroupMember, sendGroupMessageController);
 router.post('/create-group', createGroupController);
 router.post('/add-group-member', addGroupMemberController);
 router.get('/messages', fetchMessageController);
-router.get('/chatroom/group/:groupid', fetchGroupMessageController);
+router.get('/chatroom/group/:groupid', verifyGroupMember, fetchGroupMessageController);
 
 /**
  * Start or get a chat with another user by username.
