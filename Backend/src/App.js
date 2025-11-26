@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 
-import pool from '../Config/Database.js';
 import authenticationRoutes from '../Routes/Authentication.js';
 import chatroomRoutes from '../Routes/Chatrooms.js';
 
