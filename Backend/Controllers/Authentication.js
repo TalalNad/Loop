@@ -23,10 +23,8 @@ export const authenticationController = async (request, response) => {
     );
 };
 
-export const signupController = async (request, response) => {
-    const {
-        body: { username, password, email },
-    } = request;
+export const signUpController = async (request, response) => {
+    const { body: { username, password, email } } = request;
 
     const client = await pool.connect();
 
@@ -34,40 +32,32 @@ export const signupController = async (request, response) => {
         const usernameCheckQuery = 'Select * from Users where username = $1';
         const emailCheckQuery = 'Select * from Users where email = $1';
 
-        let usernameCheckResult = await client.query(usernameCheckQuery, [
-            username,
-        ]);
+        let usernameCheckResult = await pool.query(usernameCheckQuery, [username]);
 
-        // if (usernameCheckResult.rowCount)
-        //   return response
-        //     .status(400)
-        //     .json({ message: 'Username already taken. Try another one.' });
-        if (usernameCheckQuery.rowCount) {
+        if (usernameCheckResult.rowCount) {
+            let newUsername = username;
 
             while (usernameCheckResult.rowCount) {
                 let randomIdx = Math.floor(Math.random() * 100);
 
-                let newUsername = username + randomIdx;
+                newUsername = username + randomIdx;
 
                 usernameCheckResult = await pool.query(usernameCheckQuery, [newUsername]);
             }
 
-            return response.status(400).json("Username already taken. Try: " + newUsername);
+            return response.status(400).json(`Username already taken. Try: ${newUsername}`)
         }
 
-        const emailCheckResult = await client.query(emailCheckQuery, [email]);
+        let emailCheckResult = await pool.query(emailCheckQuery, [email]);
 
         if (emailCheckResult.rowCount)
-            return response
-                .status(400)
-                .json({ message: 'Email already registered. Try logging in.' });
+            return response.status(400).json("Email already registered. Try logging in.");
 
         const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
         await client.query('BEGIN');
 
-        const query =
-            'Insert into users (username, password, email) values ($1, $2, $3) returning userid, username, email';
+        const query = 'Insert into users (username, password, email) values ($1, $2, $3) returning userid, username, email';
         const values = [username, hashedPassword, email];
 
         const result = await client.query(query, values);
@@ -78,14 +68,12 @@ export const signupController = async (request, response) => {
         const token = generateToken(user);
 
         return response.status(201).json({
-            message:
-                'User registered successfully with userid: ' + result.rows[0].userid,
+            message: 'User registered successfully with userid: ' + result.rows[0].userid,
             user: result.rows[0],
             token,
         });
     } catch (error) {
         console.error('Error during user signup:', error);
-        await client.query('ROLLBACK');
         return response.status(500).json({ error: 'Internal Server Error' });
     } finally {
         client.release();
