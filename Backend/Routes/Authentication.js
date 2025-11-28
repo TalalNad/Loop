@@ -1,16 +1,16 @@
 import { Router } from 'express';
 import {
   authenticationController,
-  signupController,
   loginController,
   searchUsersController,
+  signUpController
 } from '../Controllers/Authentication.js';
 import { verifyToken } from '../Middlewares/Authentication.js';
 
 const router = Router();
 
 router.get('/', authenticationController);
-router.post('/signup', signupController);
+router.post('/signup', signUpController);
 router.post('/login', loginController);
 
 // NEW: search users endpoint used by frontend search bar
