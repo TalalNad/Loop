@@ -65,11 +65,15 @@ export default function ChatsPage() {
     loadChats();
   }, []);
 
+  // IMPORTANT: for groups, use groupid as key; for 1:1 use id/chatroomid
   const selectedChat = useMemo(
     () =>
-      chats.find(
-        (c) => String(c.id || c.chatroomid || c.groupid) === String(selectedChatId)
-      ) || null,
+      chats.find((c) => {
+        const key = c.isGroup
+          ? (c.groupid || c.id)
+          : (c.id || c.chatroomid);
+        return String(key) === String(selectedChatId);
+      }) || null,
     [chats, selectedChatId]
   );
 
@@ -86,21 +90,22 @@ export default function ChatsPage() {
         let list = [];
 
         if (selectedChat.isGroup) {
-          // GROUP CHAT
-          const data = await fetchGroupMessages(selectedChatId);
+          // GROUP CHAT – always use the real groupid
+          const groupId = selectedChat.groupid || selectedChatId;
+          const data = await fetchGroupMessages(groupId);
           const raw = Array.isArray(data) ? data : data.messages || [];
 
           list = raw.map((row, index) => ({
             id: row.id || index + 1,
             fromMe:
               currentUser &&
-              (String(row.senderid) === String(currentUser.userid)),
+              String(row.senderid) === String(currentUser.userid),
             content: row.content,
-            sentAt: row.created_at || row.sentAt || '',
+            sentAt: row.sent_at || row.created_at || row.sentAt || '',
             senderName: row.username || row.senderName || '',
           }));
         } else {
-          // 1:1 CHAT
+          // 1:1 CHAT – selectedChatId should be other user's id
           const data = await fetchMessages(selectedChatId);
           list = Array.isArray(data) ? data : data.messages || [];
         }
@@ -145,12 +150,9 @@ export default function ChatsPage() {
 
     try {
       if (selectedChat.isGroup) {
-        // send group message
-        await sendGroupMessage(
-          selectedChatId,
-          content,
-          currentUser?.userid
-        );
+        // send group message – use groupid
+        const groupId = selectedChat.groupid || selectedChatId;
+        await sendGroupMessage(groupId, content, currentUser?.userid);
       } else {
         // send 1:1 message
         await sendMessage(selectedChatId, content);
@@ -244,13 +246,11 @@ export default function ChatsPage() {
     const key = user.userid || user.id || user.username;
     setGroupMembers((prev) => {
       const exists = prev.some(
-        (u) =>
-          (u.userid || u.id || u.username) === key
+        (u) => (u.userid || u.id || u.username) === key
       );
       if (exists) {
         return prev.filter(
-          (u) =>
-            (u.userid || u.id || u.username) !== key
+          (u) => (u.userid || u.id || u.username) !== key
         );
       }
       return [...prev, user];
@@ -273,13 +273,10 @@ export default function ChatsPage() {
         await addGroupMember(groupId, memberId);
       }
 
-      // (backend may or may not auto-add the creator;
-      // if not, ensure creator is also a member:)
-      // await addGroupMember(groupId, currentUser.userid);
-
       // 3) Add the group to chats sidebar
       const groupChatroom = {
-        id: groupId,
+        id: groupId, // keep for backwards compatibility
+        groupid: groupId, // explicit group id
         name: group.groupname || groupName.trim(),
         isGroup: true,
         lastMessage: '',
@@ -421,7 +418,10 @@ export default function ChatsPage() {
 
           {!loadingChats &&
             chats.map((chat) => {
-              const id = chat.id || chat.chatroomid || chat.groupid;
+              // For groups, use groupid as selection id; for 1:1 use id/chatroomid
+              const id = chat.isGroup
+                ? (chat.groupid || chat.id)
+                : (chat.id || chat.chatroomid);
               const isActive = String(id) === String(selectedChatId);
 
               // Try to infer fields but keep fallbacks
@@ -441,9 +441,7 @@ export default function ChatsPage() {
               return (
                 <button
                   key={id}
-                  className={`wa-chat-list-item ${
-                    isActive ? 'active' : ''
-                  }`}
+                  className={`wa-chat-list-item ${isActive ? 'active' : ''}`}
                   onClick={() => {
                     setSelectedChatId(id);
                     setIsCreatingGroup(false); // if you were creating a group, exit
@@ -547,91 +545,91 @@ export default function ChatsPage() {
                 />
               </form>
 
-              {/* Selected members chips */}
-              <div className="wa-group-members-chips">
-                {groupMembers.map((user) => (
-                  <button
-                    key={user.userid || user.id || user.username}
-                    type="button"
-                    className="wa-chip"
-                    onClick={() => toggleAddGroupMember(user)}
-                  >
-                    {user.username}
-                    <span className="wa-chip-remove">×</span>
-                  </button>
-                ))}
-                {groupMembers.length === 0 && (
-                  <span className="small-text">No members added yet.</span>
-                )}
-              </div>
-
-              {/* Search results for adding members */}
-              <div className="wa-user-search-results">
-                {groupSearchLoading && (
-                  <div className="wa-user-search-row small-text">
-                    Searching…
-                  </div>
-                )}
-
-                {groupSearchError && !groupSearchLoading && (
-                  <div className="wa-user-search-row error-text">
-                    {groupSearchError}
-                  </div>
-                )}
-
-                {!groupSearchLoading &&
-                  groupSearchResults.map((user) => {
-                    const key = user.userid || user.id || user.username;
-                    const alreadyAdded = groupMembers.some(
-                      (u) =>
-                        (u.userid || u.id || u.username) === key
-                    );
-                    if (alreadyAdded) return null;
-
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        className="wa-user-search-row"
-                        onClick={() => toggleAddGroupMember(user)}
-                      >
-                        <div className="wa-avatar-circle small">
-                          <span className="wa-avatar-initial">
-                            {(user.username || '?')[0].toUpperCase()}
-                          </span>
-                        </div>
-                        <div className="wa-user-search-text">
-                          <div className="wa-user-search-name">
-                            {user.username}
-                          </div>
-                          <div className="wa-user-search-email">
-                            {user.email}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-              </div>
+            {/* Selected members chips */}
+            <div className="wa-group-members-chips">
+              {groupMembers.map((user) => (
+                <button
+                  key={user.userid || user.id || user.username}
+                  type="button"
+                  className="wa-chip"
+                  onClick={() => toggleAddGroupMember(user)}
+                >
+                  {user.username}
+                  <span className="wa-chip-remove">×</span>
+                </button>
+              ))}
+              {groupMembers.length === 0 && (
+                <span className="small-text">No members added yet.</span>
+              )}
             </div>
 
-            <div className="wa-group-actions">
-              <button
-                type="button"
-                className="wa-logout-button"
-                onClick={() => setIsCreatingGroup(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="wa-send-button"
-                disabled={!groupName.trim() || groupMembers.length === 0}
-                onClick={handleCreateGroup}
-              >
-                Create group
-              </button>
+            {/* Search results for adding members */}
+            <div className="wa-user-search-results">
+              {groupSearchLoading && (
+                <div className="wa-user-search-row small-text">
+                  Searching…
+                </div>
+              )}
+
+              {groupSearchError && !groupSearchLoading && (
+                <div className="wa-user-search-row error-text">
+                  {groupSearchError}
+                </div>
+              )}
+
+              {!groupSearchLoading &&
+                groupSearchResults.map((user) => {
+                  const key = user.userid || user.id || user.username;
+                  const alreadyAdded = groupMembers.some(
+                    (u) =>
+                      (u.userid || u.id || u.username) === key
+                  );
+                  if (alreadyAdded) return null;
+
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      className="wa-user-search-row"
+                      onClick={() => toggleAddGroupMember(user)}
+                    >
+                      <div className="wa-avatar-circle small">
+                        <span className="wa-avatar-initial">
+                          {(user.username || '?')[0].toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="wa-user-search-text">
+                        <div className="wa-user-search-name">
+                          {user.username}
+                        </div>
+                        <div className="wa-user-search-email">
+                          {user.email}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
             </div>
           </div>
+
+          <div className="wa-group-actions">
+            <button
+              type="button"
+              className="wa-logout-button"
+              onClick={() => setIsCreatingGroup(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="wa-send-button"
+              disabled={!groupName.trim() || groupMembers.length === 0}
+              onClick={handleCreateGroup}
+            >
+              Create group
+            </button>
+          </div>
+        </div>
         ) : selectedChat ? (
           <>
             <header className="wa-chat-main-header">
@@ -681,7 +679,7 @@ export default function ChatsPage() {
                 >
                   <div className="wa-message-bubble">
                     {/* Show sender name for incoming 1:1 messages */}
-                    {(!selectedChat.isGroup && !msg.fromMe) && (
+                    {!selectedChat.isGroup && !msg.fromMe && (
                       <div className="wa-message-sender small-text">
                         {selectedChat.name}
                       </div>
