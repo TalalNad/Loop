@@ -505,7 +505,7 @@ export const sendGroupMessageController = async (request, response) => {
 export const fetchGroupMessageController = async (request, response) => {
   const {
     params: { groupid },
-  } = request;
+  } = request; 
 
   try {
     const result = await pool.query(
