@@ -3,7 +3,6 @@
 const API_BASE_URL =
   process.env.REACT_APP_API_BASE_URL || 'http://localhost:4000';
 
-// Helper to attach token if you use JWT auth (you do for login/signup).
 function authHeaders() {
   const token = localStorage.getItem('loop_token');
 
@@ -31,13 +30,8 @@ async function handleResponse(response) {
   return data;
 }
 
-/**
- * Fetch chatrooms for the current user.
- *
- * 🔧 ADAPT THIS to match your backend:
- * - If your route is different (e.g. /chatrooms/user), change the URL.
- * - If response shape is { chatrooms: [...] } adjust mapping in ChatsPage.
- */
+// ========== 1:1 CHAT APIs ==========
+
 export async function fetchChatrooms() {
   const res = await fetch(`${API_BASE_URL}/chatrooms`, {
     method: 'GET',
@@ -47,10 +41,6 @@ export async function fetchChatrooms() {
   return handleResponse(res);
 }
 
-/**
- * Fetch messages for a given chatroom.
- * Assumes GET /chatrooms/:id/messages
- */
 export async function fetchMessages(chatroomId) {
   const res = await fetch(
     `${API_BASE_URL}/chatrooms/${encodeURIComponent(chatroomId)}/messages`,
@@ -63,10 +53,6 @@ export async function fetchMessages(chatroomId) {
   return handleResponse(res);
 }
 
-/**
- * Send a message to a chatroom.
- * Assumes POST /chatrooms/:id/messages with { content }.
- */
 export async function sendMessage(chatroomId, content) {
   const res = await fetch(
     `${API_BASE_URL}/chatrooms/${encodeURIComponent(chatroomId)}/messages`,
@@ -80,11 +66,6 @@ export async function sendMessage(chatroomId, content) {
   return handleResponse(res);
 }
 
-/**
- * Search users by username.
- * Assumes GET /auth/users?username=xyz
- * 🔧 Change URL / query param if your backend is different.
- */
 export async function searchUsersByUsername(username) {
   const res = await fetch(
     `${API_BASE_URL}/auth/users?username=${encodeURIComponent(username)}`,
@@ -97,16 +78,69 @@ export async function searchUsersByUsername(username) {
   return handleResponse(res);
 }
 
-/**
- * Create (or get) a chatroom with another user.
- * For now I assume POST /chatrooms/start with { username } payload.
- * 🔧 Change path/body if your backend uses IDs or a different route.
- */
 export async function startChatWithUser(username) {
   const res = await fetch(`${API_BASE_URL}/chatrooms/start`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ username }),
+  });
+
+  return handleResponse(res);
+}
+
+// ========== GROUP CHAT APIs ==========
+
+// Create a group. Backend expects: { groupname, userid }
+export async function createGroup(groupName, creatorUserId) {
+  const res = await fetch(`${API_BASE_URL}/chatrooms/create-group`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      groupname: groupName,
+      userid: creatorUserId,
+    }),
+  });
+
+  return handleResponse(res);
+}
+
+// Add a member to a group. Backend expects: { groupid, userid }
+export async function addGroupMember(groupId, userId) {
+  const res = await fetch(`${API_BASE_URL}/chatrooms/add-group-member`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      groupid: groupId,
+      userid: userId,
+    }),
+  });
+
+  return handleResponse(res);
+}
+
+// Fetch messages for a group: GET /chatrooms/chatroom/group/:groupid
+export async function fetchGroupMessages(groupId) {
+  const res = await fetch(
+    `${API_BASE_URL}/chatrooms/chatroom/group/${encodeURIComponent(groupId)}`,
+    {
+      method: 'GET',
+      headers: authHeaders(),
+    }
+  );
+
+  return handleResponse(res);
+}
+
+// Send a group message. Backend expects: { senderid, groupid, message }
+export async function sendGroupMessage(groupId, content, senderId) {
+  const res = await fetch(`${API_BASE_URL}/chatrooms/send-group-message`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      groupid: groupId,
+      senderid: senderId,
+      message: content,
+    }),
   });
 
   return handleResponse(res);

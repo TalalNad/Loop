@@ -11,12 +11,15 @@ import {
   fetchConversationController,
   sendConversationMessageController,
   startChatController,
-  fetchGroupMessageController
+  fetchGroupMessageController,
 } from '../Controllers/Chatrooms.js';
 import { verifyToken } from '../Middlewares/Authentication.js';
 import { verifyGroupMember } from '../Middlewares/Chatrooms.js';
 
 const router = Router();
+
+// Simple health check / debug route
+router.get('/health', chatroomController);
 
 /**
  * Chat list (left sidebar) for the logged-in user.
@@ -25,14 +28,12 @@ const router = Router();
 router.get('/', verifyToken, fetchChatRoomsController);
 
 /**
- * Legacy endpoints you already had – kept as-is so nothing breaks.
+ * Legacy direct-message endpoints (kept for backwards compatibility).
+ * These are not used by the new React frontend but left here so older
+ * clients don't break.
  */
 router.post('/send', sendMessageController);
-router.post('/send-group-message', verifyGroupMember, sendGroupMessageController);
-router.post('/create-group', createGroupController);
-router.post('/add-group-member', addGroupMemberController);
 router.get('/messages', fetchMessageController);
-router.get('/chatroom/group/:groupid', verifyGroupMember, fetchGroupMessageController);
 
 /**
  * Start or get a chat with another user by username.
@@ -43,11 +44,40 @@ router.post('/start', verifyToken, startChatController);
 /**
  * Conversation between current user and another user.
  * Frontend:
- *   GET  /chatrooms/:id/messages
- *   POST /chatrooms/:id/messages
- * Here :id is the other user's userid.
+ *   GET  /chatrooms/:otherUserId/messages
+ *   POST /chatrooms/:otherUserId/messages
+ * Here :otherUserId is the other user's userid.
  */
 router.get('/:otherUserId/messages', verifyToken, fetchConversationController);
-router.post('/:otherUserId/messages', verifyToken, sendConversationMessageController);
+router.post(
+  '/:otherUserId/messages',
+  verifyToken,
+  sendConversationMessageController,
+);
+
+/**
+ * GROUP CHAT ROUTES
+ */
+// Create a group (creator is automatically added as member)
+router.post('/create-group', verifyToken, createGroupController);
+
+// Add a member to a group
+router.post('/add-group-member', verifyToken, addGroupMemberController);
+
+// Send a message to a group (only if member)
+router.post(
+  '/send-group-message',
+  verifyToken,
+  verifyGroupMember,
+  sendGroupMessageController,
+);
+
+// Fetch messages for a group (only if member)
+router.get(
+  '/chatroom/group/:groupid',
+  verifyToken,
+  verifyGroupMember,
+  fetchGroupMessageController,
+);
 
 export default router;

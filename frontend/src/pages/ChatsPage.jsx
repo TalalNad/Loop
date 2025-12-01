@@ -7,6 +7,10 @@ import {
   sendMessage,
   searchUsersByUsername,
   startChatWithUser,
+  createGroup,
+  addGroupMember,
+  fetchGroupMessages,
+  sendGroupMessage,
 } from '../api/chat';
 
 export default function ChatsPage() {
@@ -21,11 +25,20 @@ export default function ChatsPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState('');
 
-  // global user search (top left bar)
+  // global user search (top left bar, for 1:1 chats)
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [userSearchResults, setUserSearchResults] = useState([]);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
   const [userSearchError, setUserSearchError] = useState('');
+
+  // GROUP CREATION STATE
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [groupName, setGroupName] = useState('');
+  const [groupMembers, setGroupMembers] = useState([]); // array of user objects
+  const [groupSearchTerm, setGroupSearchTerm] = useState('');
+  const [groupSearchResults, setGroupSearchResults] = useState([]);
+  const [groupSearchLoading, setGroupSearchLoading] = useState(false);
+  const [groupSearchError, setGroupSearchError] = useState('');
 
   const storedUser = localStorage.getItem('loop_user');
   const currentUser = storedUser ? JSON.parse(storedUser) : null;
@@ -55,22 +68,43 @@ export default function ChatsPage() {
   const selectedChat = useMemo(
     () =>
       chats.find(
-        (c) => String(c.id || c.chatroomid) === String(selectedChatId)
+        (c) => String(c.id || c.chatroomid || c.groupid) === String(selectedChatId)
       ) || null,
     [chats, selectedChatId]
   );
 
   const messages = messagesByChat[selectedChatId] || [];
 
-  // Load messages when chat changes
+  // Load messages when chat changes (1:1 vs group aware)
   useEffect(() => {
     if (!selectedChatId) return;
+    if (!selectedChat) return;
 
     async function loadMessages() {
       setLoadingMessages(true);
       try {
-        const data = await fetchMessages(selectedChatId);
-        const list = Array.isArray(data) ? data : data.messages || [];
+        let list = [];
+
+        if (selectedChat.isGroup) {
+          // GROUP CHAT
+          const data = await fetchGroupMessages(selectedChatId);
+          const raw = Array.isArray(data) ? data : data.messages || [];
+
+          list = raw.map((row, index) => ({
+            id: row.id || index + 1,
+            fromMe:
+              currentUser &&
+              (String(row.senderid) === String(currentUser.userid)),
+            content: row.content,
+            sentAt: row.created_at || row.sentAt || '',
+            senderName: row.username || row.senderName || '',
+          }));
+        } else {
+          // 1:1 CHAT
+          const data = await fetchMessages(selectedChatId);
+          list = Array.isArray(data) ? data : data.messages || [];
+        }
+
         setMessagesByChat((prev) => ({
           ...prev,
           [selectedChatId]: list,
@@ -87,11 +121,11 @@ export default function ChatsPage() {
     if (!messagesByChat[selectedChatId]) {
       loadMessages();
     }
-  }, [selectedChatId, messagesByChat]);
+  }, [selectedChatId, selectedChat, messagesByChat, currentUser]);
 
   const handleSend = async (event) => {
     event.preventDefault();
-    if (!draft.trim() || !selectedChatId) return;
+    if (!draft.trim() || !selectedChatId || !selectedChat) return;
 
     const content = draft.trim();
     setDraft('');
@@ -100,8 +134,8 @@ export default function ChatsPage() {
     const optimistic = {
       id: Date.now(),
       fromMe: true,
-      text: content,
-      time: 'Just now',
+      content,
+      sentAt: 'Just now',
     };
 
     setMessagesByChat((prev) => ({
@@ -110,17 +144,25 @@ export default function ChatsPage() {
     }));
 
     try {
-      const saved = await sendMessage(selectedChatId, content);
-      // If backend returns the full message, normalize & replace the optimistic one if you want.
-      // For now we simply trust optimistic message.
-      console.log('Message saved:', saved);
+      if (selectedChat.isGroup) {
+        // send group message
+        await sendGroupMessage(
+          selectedChatId,
+          content,
+          currentUser?.userid
+        );
+      } else {
+        // send 1:1 message
+        await sendMessage(selectedChatId, content);
+      }
+      // For now, we trust optimistic message.
     } catch (err) {
       console.error(err);
       setError(err.message || 'Failed to send message');
     }
   };
 
-  // USER SEARCH – start chat by username
+  // USER SEARCH – start 1:1 chat by username
   const handleUserSearchSubmit = async (e) => {
     e.preventDefault();
     if (!userSearchTerm.trim()) return;
@@ -174,6 +216,93 @@ export default function ChatsPage() {
     }
   };
 
+  // GROUP: search users to add as members
+  const handleGroupUserSearchSubmit = async (e) => {
+    e.preventDefault();
+    if (!groupSearchTerm.trim()) return;
+
+    setGroupSearchLoading(true);
+    setGroupSearchError('');
+    setGroupSearchResults([]);
+
+    try {
+      const data = await searchUsersByUsername(groupSearchTerm.trim());
+      const users = Array.isArray(data) ? data : data.users || [];
+      setGroupSearchResults(users);
+      if (users.length === 0) {
+        setGroupSearchError('No users found.');
+      }
+    } catch (err) {
+      console.error(err);
+      setGroupSearchError(err.message || 'Failed to search users');
+    } finally {
+      setGroupSearchLoading(false);
+    }
+  };
+
+  const toggleAddGroupMember = (user) => {
+    const key = user.userid || user.id || user.username;
+    setGroupMembers((prev) => {
+      const exists = prev.some(
+        (u) =>
+          (u.userid || u.id || u.username) === key
+      );
+      if (exists) {
+        return prev.filter(
+          (u) =>
+            (u.userid || u.id || u.username) !== key
+        );
+      }
+      return [...prev, user];
+    });
+  };
+
+  const handleCreateGroup = async () => {
+    if (!groupName.trim() || groupMembers.length === 0 || !currentUser) return;
+
+    try {
+      // 1) Create the group
+      const created = await createGroup(groupName.trim(), currentUser.userid);
+      const group = created.group || created;
+
+      const groupId = group.groupid || group.id;
+
+      // 2) Add each selected member
+      for (const member of groupMembers) {
+        const memberId = member.userid || member.id;
+        await addGroupMember(groupId, memberId);
+      }
+
+      // (backend may or may not auto-add the creator;
+      // if not, ensure creator is also a member:)
+      // await addGroupMember(groupId, currentUser.userid);
+
+      // 3) Add the group to chats sidebar
+      const groupChatroom = {
+        id: groupId,
+        name: group.groupname || groupName.trim(),
+        isGroup: true,
+        lastMessage: '',
+        lastMessageTime: '',
+        unread: 0,
+      };
+
+      setChats((prev) => [...prev, groupChatroom]);
+
+      // 4) Select this group & exit creation mode
+      setSelectedChatId(groupId);
+      setIsCreatingGroup(false);
+      setGroupName('');
+      setGroupMembers([]);
+      setGroupSearchTerm('');
+      setGroupSearchResults([]);
+      setGroupSearchError('');
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Failed to create group');
+    }
+  };
+
   return (
     <div className="wa-chat-layout">
       {/* LEFT SIDEBAR */}
@@ -185,7 +314,7 @@ export default function ChatsPage() {
             </span>
           </div>
 
-          {/* Global user search bar – top right area of header */}
+          {/* Global user search bar – top right area of header (for 1:1) */}
           <form
             className="wa-header-search-form"
             onSubmit={handleUserSearchSubmit}
@@ -203,7 +332,7 @@ export default function ChatsPage() {
           </form>
         </header>
 
-        {/* Show search results dropdown if any */}
+        {/* Show user search results dropdown if any */}
         {userSearchTerm &&
           (userSearchLoading ||
             userSearchResults.length > 0 ||
@@ -252,6 +381,22 @@ export default function ChatsPage() {
           <button className="wa-chat-tab">Unread</button>
           <button className="wa-chat-tab">Favourites</button>
           <button className="wa-chat-tab">Groups</button>
+
+          {/* NEW GROUP BUTTON */}
+          <button
+            type="button"
+            className="wa-chat-tab wa-chat-tab-new-group"
+            onClick={() => {
+              setIsCreatingGroup(true);
+              setGroupName('');
+              setGroupMembers([]);
+              setGroupSearchTerm('');
+              setGroupSearchResults([]);
+              setGroupSearchError('');
+            }}
+          >
+            + New Group
+          </button>
         </div>
 
         {/* Existing search bar under tabs can later be used to filter chat list only */}
@@ -279,12 +424,16 @@ export default function ChatsPage() {
 
           {!loadingChats &&
             chats.map((chat) => {
-              const id = chat.id || chat.chatroomid;
+              const id = chat.id || chat.chatroomid || chat.groupid;
               const isActive = String(id) === String(selectedChatId);
 
               // Try to infer fields but keep fallbacks
               const name =
-                chat.name || chat.title || chat.otherUsername || 'Chat';
+                chat.name ||
+                chat.title ||
+                chat.otherUsername ||
+                chat.groupname ||
+                'Chat';
 
               const lastMessage = chat.lastMessage || chat.preview || '';
 
@@ -298,7 +447,10 @@ export default function ChatsPage() {
                   className={`wa-chat-list-item ${
                     isActive ? 'active' : ''
                   }`}
-                  onClick={() => setSelectedChatId(id)}
+                  onClick={() => {
+                    setSelectedChatId(id);
+                    setIsCreatingGroup(false); // if you were creating a group, exit
+                  }}
                 >
                   <div className="wa-chat-avatar">
                     <div className="wa-avatar-circle small">
@@ -309,7 +461,14 @@ export default function ChatsPage() {
                   </div>
                   <div className="wa-chat-list-main">
                     <div className="wa-chat-list-top">
-                      <span className="wa-chat-name">{name}</span>
+                      <span className="wa-chat-name">
+                        {name}
+                        {chat.isGroup && (
+                          <span className="wa-chat-group-label">
+                            &nbsp;• Group
+                          </span>
+                        )}
+                      </span>
                       <span className="wa-chat-time">{time}</span>
                     </div>
                     <div className="wa-chat-list-bottom">
@@ -351,7 +510,7 @@ export default function ChatsPage() {
         </div>
       </aside>
 
-      {/* RIGHT PANEL – CURRENT CHAT OR LOOP EMPTY STATE */}
+      {/* RIGHT PANEL – CURRENT CHAT OR GROUP CREATION OR LOOP EMPTY STATE */}
       <main className="wa-chat-main">
         {error && (
           <div className="wa-error-banner" style={{ margin: 8 }}>
@@ -359,7 +518,124 @@ export default function ChatsPage() {
           </div>
         )}
 
-        {selectedChat ? (
+        {isCreatingGroup ? (
+          <div className="wa-chat-empty wa-group-create">
+            <h2>Create a new group</h2>
+
+            <div className="wa-group-field">
+              <label className="wa-label">Group name</label>
+              <input
+                className="wa-chat-input"
+                placeholder="My awesome group"
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+              />
+            </div>
+
+            <div className="wa-group-field">
+              <label className="wa-label">Add members</label>
+              <form
+                className="wa-header-search-form"
+                onSubmit={handleGroupUserSearchSubmit}
+              >
+                <input
+                  className="wa-header-search-input"
+                  placeholder="Search username"
+                  value={groupSearchTerm}
+                  onChange={(e) => {
+                    setGroupSearchTerm(e.target.value);
+                    setGroupSearchError('');
+                    setGroupSearchResults([]);
+                  }}
+                />
+              </form>
+
+              {/* Selected members chips */}
+              <div className="wa-group-members-chips">
+                {groupMembers.map((user) => (
+                  <button
+                    key={user.userid || user.id || user.username}
+                    type="button"
+                    className="wa-chip"
+                    onClick={() => toggleAddGroupMember(user)}
+                  >
+                    {user.username}
+                    <span className="wa-chip-remove">×</span>
+                  </button>
+                ))}
+                {groupMembers.length === 0 && (
+                  <span className="small-text">No members added yet.</span>
+                )}
+              </div>
+
+              {/* Search results for adding members */}
+              <div className="wa-user-search-results">
+                {groupSearchLoading && (
+                  <div className="wa-user-search-row small-text">
+                    Searching…
+                  </div>
+                )}
+
+                {groupSearchError && !groupSearchLoading && (
+                  <div className="wa-user-search-row error-text">
+                    {groupSearchError}
+                  </div>
+                )}
+
+                {!groupSearchLoading &&
+                  groupSearchResults.map((user) => {
+                    const key = user.userid || user.id || user.username;
+                    const alreadyAdded = groupMembers.some(
+                      (u) =>
+                        (u.userid || u.id || u.username) === key
+                    );
+                    if (alreadyAdded) return null;
+
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        className="wa-user-search-row"
+                        onClick={() => toggleAddGroupMember(user)}
+                      >
+                        <div className="wa-avatar-circle small">
+                          <span className="wa-avatar-initial">
+                            {(user.username || '?')[0].toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="wa-user-search-text">
+                          <div className="wa-user-search-name">
+                            {user.username}
+                          </div>
+                          <div className="wa-user-search-email">
+                            {user.email}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+
+            <div className="wa-group-actions">
+              <button
+                type="button"
+                className="wa-logout-button"
+                onClick={() => setIsCreatingGroup(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="wa-send-button"
+                disabled={!groupName.trim() || groupMembers.length === 0}
+                onClick={handleCreateGroup}
+              >
+                Create group
+              </button>
+            </div>
+          </div>
+        ) : selectedChat ? (
           <>
             <header className="wa-chat-main-header">
               <div className="wa-chat-header-left">
@@ -369,6 +645,7 @@ export default function ChatsPage() {
                       selectedChat.name ||
                       selectedChat.title ||
                       selectedChat.otherUsername ||
+                      selectedChat.groupname ||
                       'C'
                     )[0].toUpperCase()}
                   </span>
@@ -378,9 +655,12 @@ export default function ChatsPage() {
                     {selectedChat.name ||
                       selectedChat.title ||
                       selectedChat.otherUsername ||
+                      selectedChat.groupname ||
                       'Chat'}
                   </div>
-                  <div className="wa-chat-header-status">Online</div>
+                  <div className="wa-chat-header-status">
+                    {selectedChat.isGroup ? 'Group chat' : 'Online'}
+                  </div>
                 </div>
               </div>
               <div className="wa-chat-header-right">
@@ -403,6 +683,15 @@ export default function ChatsPage() {
                   }`}
                 >
                   <div className="wa-message-bubble">
+                    {/* For groups, show sender name for incoming messages */}
+                    {selectedChat?.isGroup &&
+                      !msg.fromMe &&
+                      msg.senderName && (
+                        <div className="wa-message-sender small-text">
+                          {msg.senderName}
+                        </div>
+                      )}
+
                     <span className="wa-message-text">
                       {msg.text || msg.content}
                     </span>
@@ -433,8 +722,8 @@ export default function ChatsPage() {
             <div className="wa-chat-empty-logo">Loop</div>
             <h2>Welcome to Loop</h2>
             <p>
-              Select a chat on the left or search a username above to start a
-              new conversation.
+              Select a chat on the left, start a new 1:1 chat from the search
+              box, or create a new group.
             </p>
           </div>
         )}
