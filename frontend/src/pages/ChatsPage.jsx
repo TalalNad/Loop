@@ -378,9 +378,6 @@ export default function ChatsPage() {
 
         <div className="wa-chat-tabs">
           <button className="wa-chat-tab active">All</button>
-          <button className="wa-chat-tab">Unread</button>
-          <button className="wa-chat-tab">Favourites</button>
-          <button className="wa-chat-tab">Groups</button>
 
           {/* NEW GROUP BUTTON */}
           <button
@@ -683,6 +680,12 @@ export default function ChatsPage() {
                   }`}
                 >
                   <div className="wa-message-bubble">
+                    {/* Show sender name for incoming 1:1 messages */}
+                    {(!selectedChat.isGroup && !msg.fromMe) && (
+                      <div className="wa-message-sender small-text">
+                        {selectedChat.name}
+                      </div>
+                    )}
                     {/* For groups, show sender name for incoming messages */}
                     {selectedChat?.isGroup &&
                       !msg.fromMe &&

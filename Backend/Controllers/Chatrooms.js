@@ -462,7 +462,7 @@ export const sendGroupMessageController = async (request, response) => {
     const query = `
       INSERT INTO GroupMessages (senderid, groupid, sent_at, content, iv, tag)
       VALUES ($1, $2, current_timestamp, $3, $4, $5)
-      RETURNING id, senderid, groupid, sent_at, content, iv, tag
+      RETURNING senderid, groupid, sent_at, content, iv, tag
     `;
 
     const values = [
@@ -486,7 +486,7 @@ export const sendGroupMessageController = async (request, response) => {
 
     return response.status(201).json({
       message: {
-        id: row.id,
+        id: null,              // no id column in GroupMessages
         groupid: row.groupid,
         fromMe: true,
         senderid: myId,
@@ -502,7 +502,6 @@ export const sendGroupMessageController = async (request, response) => {
     client.release();
   }
 };
-
 export const fetchGroupMessageController = async (request, response) => {
   const {
     params: { groupid },
